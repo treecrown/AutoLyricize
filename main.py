@@ -47,7 +47,35 @@ def lyricsify_find_song_lyrics(query):
     title = artist_title if sep_ind < 0 else artist_title[sep_ind + 1:].strip()
     query_lower = query.lower()
     if query_lower.find(title.lower()) < 0 or (sep_ind >= 0 and query_lower.find(artist.lower()) < 0):
-        return None
+        link = BeautifulSoup(
+            requests.get(url="https://www.lyricsify.com/" +
+                             query[0].lower() + '/' +
+                            query.split(' - ')[0].lower().replace(' ', '-') + '/' +
+                            query.split(' - ')[1].lower().replace(' ', '-') + '.html',
+                         headers={
+                             "User-Agent": ""
+                         }).text,
+            "html.parser").find("a", class_="title")
+        # If not found, return None
+        if link is None or link == BeautifulSoup(requests.get(url="https://www.lyricsify.com/",headers={"User-Agent": "" }).text,"html.parser").find("a", class_="title"):
+            return None
+        # Scrape the song URL for the lyrics text
+        song_html = BeautifulSoup(
+            requests.get(url="https://www.lyricsify.com" + link.attrs['href'],
+                         headers={
+                             "User-Agent": ""
+                         }).text,
+            "html.parser")
+        if song_html.find("h1") is None:
+            return None
+        # If the artist or song name does not exist in the query, return None
+        artist_title = song_html.find("h1").string[:-7]
+        sep_ind = artist_title.find("-")
+        artist = None if sep_ind < 0 else artist_title[0:sep_ind].strip()
+        title = artist_title if sep_ind < 0 else artist_title[sep_ind + 1:].strip()
+        query_lower = query.lower()
+        if query_lower.find(title.lower()) < 0 or (sep_ind >= 0 and query_lower.find(artist.lower()) < 0):
+            return None
     # Return the lyrics text
     return "".join(song_html.find("div", id="entry").strings)
 
@@ -133,9 +161,9 @@ for i, file in enumerate(files):
     for lyric in audio_file.tag.lyrics:
         existing_lyrics += lyric.text
     if len(existing_lyrics.strip()) > 0:
-        print(str(i+1) + "\tof " + str(len(files)) + " : Warning : File already has lyrics - skipped    : " +
+        print(str(i+1) + "\tof " + str(len(files)) + " : Warning : File already has lyrics - may be overwritten    : " +
               file[0] + file[1])
-        continue
+        # continue
     # Note: re.sub... removes anything in brackets - used for "(feat. ...) as this improves search results"
     query = re.sub(r" ?\([^)]+\)", "",
                    audio_file.tag.artist + " - " + audio_file.tag.title)
@@ -153,7 +181,10 @@ for i, file in enumerate(files):
             print("Error getting Lyricsify lyrics for: " + file[0] + file[1])
             raise e
     if lyrics is not None:
-        audio_file.tag.lyrics.set(lyrics)
+        if len(existing_lyrics.strip()) > 0:
+            audio_file.tag.lyrics[0].text = lyrics
+        else:
+            audio_file.tag.lyrics.set(lyrics)
         audio_file.tag.save()
         print(str(i+1) + "\tof " + str(len(files)) + " : Success : Lyrics from " + site_used + " saved to       : " +
               file[0] + file[1])
